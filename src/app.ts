@@ -2,6 +2,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { authRouter } from "./routes/auth.routes.js";
+import { playerStateRouter } from "./routes/player-state.routes.js";
 
 export const app = express();
 
@@ -12,7 +13,7 @@ const __dirname = path.dirname(__filename);
 app.use(express.json());
 
 // Маршруты регистрации и авторизации.
-app.use("/players", authRouter);
+app.use("/players", authRouter, playerStateRouter);
 
 // Отдаём файлы клиентской части игры из папки public.
 app.use(express.static(path.resolve(__dirname, "../public")));
