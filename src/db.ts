@@ -58,6 +58,21 @@ current_database() AS database_name,
 	`)
 
 	console.log("Players table is ready")
+
+	await pool.query(`
+  CREATE TABLE IF NOT EXISTS player_states (
+    player_id UUID PRIMARY KEY
+      REFERENCES players(id) ON DELETE CASCADE,
+
+    player_x REAL NOT NULL,
+    player_y REAL NOT NULL,
+    player_a REAL NOT NULL,
+
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+`)
+
+	console.log("Player states table is ready")
 }
 
 // Программная проверка зарегистрированных игроков.
