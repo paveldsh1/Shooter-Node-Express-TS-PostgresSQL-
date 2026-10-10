@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: player-state-postgres
+    environment:
+      POSTGRES_DB: player_state
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: local_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
