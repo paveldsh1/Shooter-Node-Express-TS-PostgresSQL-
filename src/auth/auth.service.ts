@@ -1,108 +1,154 @@
 
-import { randomUUID } from "node:crypto"
-import bcrypt from "bcryptjs"
-import jwt from "jsonwebtoken"
-import 'dotenv/config'
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import "dotenv/config";
+import { pool } from "../db.js";
+import { randomUUID } from "node:crypto";
 
 interface User {
-	id: string
-	nickname: string
-	passwordHash: string
+  id: string;
+  nickname: string;
+  passwordHash: string;
 }
 
 interface AuthResult {
-	user: {
-		id: string
-		nickname: string
-	}
-	token: string
+  user: {
+    id: string;
+    nickname: string;
+  };
+  token: string;
 }
 
-const usersByNickname = new Map<string, User>()
-
 function getJwtSecret(): string {
-	const secret = process.env.JWT_SECRET
+  const secret = process.env.JWT_SECRET;
 
-	if (!secret || secret.length < 32) {
-		throw new Error(
-			"JWT_SECRET must be set and contain at least 32 characters"
-		)
-	}
+  if (!secret || secret.length < 32) {
+    throw new Error(
+      "JWT_SECRET must be set and contain at least 32 characters",
+    );
+  }
 
-	return secret
+  return secret;
 }
 
 function createAuthResult(user: User): AuthResult {
-	const token = jwt.sign(
-		{ nickname: user.nickname },
-		getJwtSecret(),
-		{
-			subject: user.id,
-			expiresIn: (process.env.JWT_EXPIRES_IN ?? "1h") as jwt.SignOptions["expiresIn"],
-			issuer: "shooter-api",
-			audience: "shooter-client",
-			algorithm: "HS256"
-		}
-	)
+  const token = jwt.sign(
+    { nickname: user.nickname },
+    getJwtSecret(),
+    {
+      subject: user.id,
+      expiresIn: (process.env.JWT_EXPIRES_IN ?? "1h") as jwt.SignOptions["expiresIn"],
+      issuer: "shooter-api",
+      audience: "shooter-client",
+      algorithm: "HS256",
+    },
+  );
 
-	return {
-		user: {
-			id: user.id,
-			nickname: user.nickname
-		},
-		token
-	}
+  return {
+    user: {
+      id: user.id,
+      nickname: user.nickname,
+    },
+    token,
+  };
 }
 
 export async function register(
-	nickname: string,
-	password: string
+  nickname: string,
+  password: string,
 ): Promise<AuthResult> {
-	const normalizedNickname = nickname.trim()
+  const normalizedNickname = nickname.trim();
 
-	if (normalizedNickname.length < 3 || normalizedNickname.length > 24) {
-		throw new Error("Nickname must contain 3–24 characters")
-	}
+  if (
+    normalizedNickname.length < 3 ||
+    normalizedNickname.length > 24
+  ) {
+    throw new Error("INVALID_NICKNAME");
+  }
 
-	if (password.length < 8 || password.length > 128) {
-		throw new Error("Password must contain 8–128 characters")
-	}
+  if (password.length < 8 || password.length > 128) {
+    throw new Error("INVALID_PASSWORD");
+  }
 
-	const key = normalizedNickname.toLowerCase()
+  const passwordHash = await bcrypt.hash(password, 12);
 
-	if (usersByNickname.has(key)) {
-		throw new Error("NICKNAME_TAKEN")
-	}
+  try {
+    const result = await pool.query<{
+      id: string;
+      nickname: string;
+      password_hash: string;
+    }>(
+      `INSERT INTO players (
+         id,
+         nickname,
+         nickname_normalized,
+         password_hash
+       )
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, nickname, password_hash`,
+      [
+        randomUUID(),
+        normalizedNickname,
+        normalizedNickname.toLowerCase(),
+        passwordHash,
+      ],
+    );
 
-	const passwordHash = await bcrypt.hash(password, 12)
+    const row = result.rows[0];
 
-	// Повторно проверяем после хеширования, чтобы избежать
-	// дублирования ника при одновременных запросах.
-	if (usersByNickname.has(key)) {
-		throw new Error("NICKNAME_TAKEN")
-	}
+    const user: User = {
+      id: row.id,
+      nickname: row.nickname,
+      passwordHash: row.password_hash,
+    };
 
-	const user: User = {
-		id: randomUUID(),
-		nickname: normalizedNickname,
-		passwordHash
-	}
+    // Сразу выдаём JWT после успешной регистрации.
+    return createAuthResult(user);
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "23505"
+    ) {
+      throw new Error("NICKNAME_TAKEN");
+    }
 
-	usersByNickname.set(key, user)
-
-	return createAuthResult(user)
+    throw error;
+  }
 }
 
 export async function login(
-	nickname: string,
-	password: string
+  nickname: string,
+  password: string,
 ): Promise<AuthResult> {
-	const key = nickname.trim().toLowerCase()
-	const user = usersByNickname.get(key)
+  const key = nickname.trim().toLowerCase();
 
-	if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-		throw new Error("INVALID_CREDENTIALS")
-	}
+  const result = await pool.query<{
+    id: string;
+    nickname: string;
+    password_hash: string;
+  }>(
+    `SELECT id, nickname, password_hash
+     FROM players
+     WHERE nickname_normalized = $1`,
+    [key],
+  );
 
-	return createAuthResult(user)
+  const row = result.rows[0];
+
+  if (
+    !row ||
+    !(await bcrypt.compare(password, row.password_hash))
+  ) {
+    throw new Error("INVALID_CREDENTIALS");
+  }
+
+  const user: User = {
+    id: row.id,
+    nickname: row.nickname,
+    passwordHash: row.password_hash,
+  };
+
+  return createAuthResult(user);
 }
