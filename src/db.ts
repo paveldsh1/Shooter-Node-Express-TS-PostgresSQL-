@@ -20,9 +20,6 @@ if (!DB_PASSWORD) {
 	throw new Error("DB_PASSWORD must be set in .env")
 }
 
-console.log("DB password matches expected value:", DB_PASSWORD === "local_dev_password")
-console.log("DB password length:", DB_PASSWORD.length)
-
 export const pool = new Pool({
 	host: DB_HOST,
 	port: Number(DB_PORT),
