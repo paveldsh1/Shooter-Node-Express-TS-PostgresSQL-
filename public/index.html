@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>CS 1.0</title>
+
     <style>
         html, body {
             width: 100%;
@@ -20,7 +22,7 @@
         #overlay {
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.9);
+            background: rgba(0, 0, 0, 0.9);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -33,16 +35,24 @@
             border: 1px solid #0f0;
             padding: 16px;
             width: 300px;
+            box-sizing: border-box;
         }
 
-        #form input[type="text"] {
+        #form input[type="text"],
+        #form input[type="password"] {
+            display: block;
             width: 100%;
             padding: 8px;
             background: #000;
             color: #0f0;
             border: 1px solid #0f0;
-            margin-bottom: 8px;
+            margin-bottom: 12px;
             box-sizing: border-box;
+            font-family: inherit;
+        }
+
+        #form input:focus {
+            outline: 1px solid #0f0;
         }
 
         #form button {
@@ -52,6 +62,20 @@
             color: #000;
             border: none;
             cursor: pointer;
+            font-family: inherit;
+        }
+
+        #form button:disabled {
+            opacity: 0.5;
+            cursor: wait;
+        }
+
+        #error {
+            color: #f55;
+            min-height: 20px;
+            margin-bottom: 8px;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
         }
 
         #output {
@@ -68,26 +92,44 @@
             font-size: 14px;
             display: block;
             white-space: pre;
+            margin: 0;
         }
 
         .help-alert {
             color: #ff4444;
         }
-
-        input {
-            width: 100%;
-            background: black;
-            color: #00ff00;
-        }
     </style>
 </head>
+
 <body>
     <div id="overlay">
         <div id="form">
-            <div style="margin-bottom:8px;">Enter nickname</div>
-            <input id="nickname" type="text" maxlength="24" placeholder="Player1" />
-            <div id="error" style="color:#f55; min-height:20px;"></div>
-            <button id="join">Join</button>
+            <div style="margin-bottom: 8px;">Enter nickname</div>
+
+            <input
+                id="nickname"
+                type="text"
+                maxlength="24"
+                placeholder="Player1"
+                autocomplete="username"
+                required
+            >
+
+            <div style="margin-bottom: 8px;">Enter password</div>
+
+            <input
+                id="password"
+                type="password"
+                minlength="8"
+                maxlength="128"
+                placeholder="Password"
+                autocomplete="current-password"
+                required
+            >
+
+            <div id="error" role="alert"></div>
+
+            <button id="join" type="button">Join</button>
         </div>
     </div>
 
@@ -98,14 +140,21 @@
         const overlay = document.getElementById("overlay");
         const joinBtn = document.getElementById("join");
         const nicknameInput = document.getElementById("nickname");
+        const passwordInput = document.getElementById("password");
         const errorBox = document.getElementById("error");
 
         let ws = null;
+        let authToken = null;
+        let manuallyClosing = false;
+
         let lastCols = 0;
         let lastRows = 0;
         let scale = 1;
+        let resizeTimer = null;
+
         const baseFontSize = 14;
         const botHelpLabel = "9 - bot mode";
+
         const measure = document.createElement("span");
         measure.textContent = "W";
         measure.style.position = "absolute";
@@ -114,57 +163,85 @@
         document.body.appendChild(measure);
 
         function applyScale() {
-            output.style.fontSize = `${Math.round(baseFontSize * scale)}px`;
+            output.style.fontSize =
+                `${Math.round(baseFontSize * scale)}px`;
+
             scheduleResize();
         }
 
         function getCharSize() {
             const style = getComputedStyle(output);
+
             measure.style.fontFamily = style.fontFamily;
             measure.style.fontSize = style.fontSize;
             measure.style.lineHeight = style.lineHeight;
+
             const rect = measure.getBoundingClientRect();
-            return { w: rect.width || 1, h: rect.height || 1 };
+
+            return {
+                w: rect.width || 1,
+                h: rect.height || 1
+            };
         }
 
         function resizeAndSend() {
             const { w, h } = getCharSize();
             const rect = output.getBoundingClientRect();
+
             const cols = Math.max(20, Math.floor(rect.width / w));
             const rows = Math.max(10, Math.floor(rect.height / h));
-            if (cols === lastCols && rows === lastRows) return;
+
+            if (cols === lastCols && rows === lastRows) {
+                return;
+            }
+
             lastCols = cols;
             lastRows = rows;
+
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(`RESIZE ${cols} ${rows} ${scale.toFixed(2)}`);
             }
         }
 
-        let resizeTimer = null;
         function scheduleResize() {
-            if (resizeTimer) clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(resizeAndSend, 50);
+            if (resizeTimer !== null) {
+                clearTimeout(resizeTimer);
+            }
+
+            resizeTimer = setTimeout(() => {
+                resizeTimer = null;
+                resizeAndSend();
+            }, 50);
         }
 
         window.addEventListener("resize", scheduleResize);
 
         function handleKeydown(e) {
-            if (overlay.style.display !== "none") return;
+            if (overlay.style.display !== "none") {
+                return;
+            }
+
             if (e.code === "BracketLeft") {
                 scale = Math.max(0.5, scale - 0.1);
                 applyScale();
+                e.preventDefault();
                 return;
             }
+
             if (e.code === "BracketRight") {
                 scale = Math.min(3, scale + 0.1);
                 applyScale();
+                e.preventDefault();
                 return;
             }
+
             if (e.code === "Digit0") {
                 scale = 1;
                 applyScale();
+                e.preventDefault();
                 return;
             }
+
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(e.code);
             }
@@ -173,125 +250,217 @@
         document.addEventListener("keydown", handleKeydown);
 
         function connectWebSocket() {
-            const protocol = location.protocol === "https:" ? "wss://" : "ws://";
-            const nickname = nicknameInput.value.trim();
-            const url = `${protocol}${location.host}/ws?nick=${encodeURIComponent(nickname)}`;
-            ws = new WebSocket(url);
+            if (!authToken) {
+                showLoginError("Missing authentication token");
+                return;
+            }
+
+            manuallyClosing = false;
+            errorBox.textContent = "";
+            output.textContent = "";
+            lastCols = 0;
+            lastRows = 0;
+
+            const protocol =
+                location.protocol === "https:" ? "wss:" : "ws:";
+
+            const url = `${protocol}//${location.host}/ws`;
+
+            // Токен передаётся в заголовке Sec-WebSocket-Protocol,
+            // а не в URL.
+            ws = new WebSocket(url, [
+                "shooter",
+                `bearer.${authToken}`
+            ]);
 
             ws.onopen = () => {
                 output.textContent = "WebSocket connected";
+                overlay.style.display = "none";
+                passwordInput.value = "";
                 resizeAndSend();
             };
 
-            ws.onmessage = async e => {
+            ws.onmessage = async (e) => {
+                let text;
+
                 if (e.data instanceof Blob) {
-                    renderFrame(await e.data.text());
+                    text = await e.data.text();
                 } else {
-                    renderFrame(e.data);
+                    text = String(e.data);
                 }
+
+                renderFrame(text);
             };
 
-            ws.onerror = e => {
-                output.textContent = "WebSocket error";
+            ws.onerror = () => {
+                // Браузер не сообщает подробности ошибки handshake.
+                // Результат подключения будет обработан в onclose.
+                console.error("WebSocket connection error");
             };
 
-            ws.onclose = e => {
-                output.textContent = "";
+            ws.onclose = (e) => {
                 ws = null;
+                authToken = null;
+                passwordInput.value = "";
+                output.textContent = "";
                 overlay.style.display = "flex";
-                errorBox.textContent = e.reason === "Killed"
-                    ? "You were killed. Enter a nickname and join again."
-                    : "Connection closed. Enter a nickname and join again.";
+
+                if (manuallyClosing) {
+                    errorBox.textContent = "Disconnected.";
+                } else if (e.reason === "Killed") {
+                    errorBox.textContent =
+                        "You were killed. Enter your nickname and password again.";
+                } else if (e.code === 1006) {
+                    errorBox.textContent =
+                        "WebSocket connection failed. Check server logs and JWT configuration.";
+                } else {
+                    errorBox.textContent =
+                        `Connection closed (${e.code}). Enter your nickname and password again.`;
+                }
             };
         }
 
+        function showLoginError(message) {
+            errorBox.textContent = message;
+            overlay.style.display = "flex";
+        }
+
         function escapeHtml(text) {
-            return text
+            return String(text)
                 .replace(/&/g, "&amp;")
                 .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;");
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
         }
 
         function renderFrame(text) {
             const lines = String(text).split("\n");
-            const rendered = lines.map(line => highlightLabel(line, botHelpLabel));
-            output.innerHTML = rendered.join("\n");
+
+            output.innerHTML = lines
+                .map(line => highlightLabel(line, botHelpLabel))
+                .join("\n");
         }
 
         function highlightLabel(line, label) {
             const idx = line.indexOf(label);
+
             if (idx === -1) {
                 return escapeHtml(line);
             }
+
             const before = line.slice(0, idx);
             const after = line.slice(idx + label.length);
+
             return `${escapeHtml(before)}<span class="help-alert">${escapeHtml(label)}</span>${escapeHtml(after)}`;
         }
 
-        async function registerNickname(nickname) {
-            const res = await fetch("/players/register", {
+        async function postAuth(path, nickname, password) {
+            const res = await fetch(path, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ nickname })
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ nickname, password })
             });
-            if (res.ok) {
-                const data = await res.json();
-                return { ok: true };
-            }
-            return { ok: false, status: res.status, data: await res.json().catch(() => ({})) };
+
+            const data = await res.json().catch(() => ({}));
+
+            return {
+                ok: res.ok,
+                status: res.status,
+                data
+            };
         }
 
-        async function loginNickname(nickname) {
-            const res = await fetch("/players/login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ nickname })
-            });
-            if (res.ok) {
-                return { ok: true };
-            }
-            return { ok: false, status: res.status, data: await res.json().catch(() => ({})) };
-        }
-
-        joinBtn.addEventListener("click", async () => {
+        async function joinGame() {
             const nickname = nicknameInput.value.trim();
-            if (!nickname) {
-                errorBox.textContent = "Enter a nickname";
+            const password = passwordInput.value;
+
+            errorBox.textContent = "";
+
+            if (nickname.length < 3 || nickname.length > 24) {
+                showLoginError("Nickname must contain 3–24 characters");
                 return;
             }
+
+            if (password.length < 8 || password.length > 128) {
+                showLoginError("Password must contain 8–128 characters");
+                return;
+            }
+
+            joinBtn.disabled = true;
+
             try {
-                const reg = await registerNickname(nickname);
+                // Сначала пробуем зарегистрировать нового пользователя.
+                const reg = await postAuth(
+                    "/players/register",
+                    nickname,
+                    password
+                );
+
+                let result;
+
                 if (reg.ok) {
-                    //localStorage.setItem("nickname", nickname);
-                    //localStorage.setItem("playerId", reg.playerId);
-                    overlay.style.display = "none";
-                    applyScale();
-                    connectWebSocket();
-                    return;
-                }
-                if (reg.status === 409) {
-                    const lg = await loginNickname(nickname);
-                    if (lg.ok) {
-                        //localStorage.setItem("nickname", nickname);
-                        //localStorage.setItem("playerId", lg.playerId);
-                        overlay.style.display = "none";
-                        applyScale();
-                        connectWebSocket();
+                    result = reg.data;
+                } else if (reg.status === 409) {
+                    // Если ник уже существует, пробуем войти.
+                    const login = await postAuth(
+                        "/players/login",
+                        nickname,
+                        password
+                    );
+
+                    if (!login.ok) {
+                        showLoginError(
+                            login.data?.error || "Login failed"
+                        );
                         return;
                     }
+
+                    result = login.data;
+                } else {
+                    showLoginError(
+                        reg.data?.error || "Registration failed"
+                    );
+                    return;
                 }
-                throw new Error(reg.data?.error || "Registration failed");
+
+                if (typeof result?.token !== "string" || !result.token) {
+                    showLoginError(
+                        "Server did not return an authentication token"
+                    );
+                    return;
+                }
+
+                authToken = result.token;
+                connectWebSocket();
             } catch (err) {
-                errorBox.textContent = err.message;
+                showLoginError(
+                    err instanceof Error
+                        ? err.message
+                        : "Connection error"
+                );
+            } finally {
+                joinBtn.disabled = false;
+            }
+        }
+
+        joinBtn.addEventListener("click", joinGame);
+
+        passwordInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                joinGame();
             }
         });
 
-        // Авто-логин, если ник уже сохранён
-        //const cached = localStorage.getItem("nickname");
-        //if (cached) {
-        //    overlay.style.display = "none";
-        //    connectWebSocket();
-        //}
+        nicknameInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                passwordInput.focus();
+            }
+        });
+
+        nicknameInput.focus();
     </script>
 </body>
 </html>
