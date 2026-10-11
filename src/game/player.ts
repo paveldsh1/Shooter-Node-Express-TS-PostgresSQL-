@@ -67,10 +67,15 @@ export class GamePlayer {
 		const nextX = this.playerX + Math.cos(this.playerA) * step
 		const nextY = this.playerY + Math.sin(this.playerA) * step
 
-		if (map.isWalkable(nextX, nextY)) {
+
+		if (map.isWalkable(nextX, this.playerY)) {
 			this.playerX = nextX
+		}
+
+		if (map.isWalkable(this.playerX, nextY)) {
 			this.playerY = nextY
 		}
+
 	}
 
 	private rotate(direction: 1 | -1, elapsedSeconds: number): void {

@@ -1,7 +1,7 @@
 
 import type { GamePlayer } from "./player.js"
 import type { Viewport } from "./game-session.js"
-import type { MiniMap } from "./mini-map.js"
+import { MiniMap } from "./mini-map.js"
 
 const FIELD_OF_VIEW = Math.PI / 3
 const MAX_DISTANCE = 24
@@ -58,7 +58,32 @@ export class AsciiRenderer {
 			}
 		}
 
-		return buffer.map((line) => line.join("")).join("\n")
+
+		const mapRows = map.getRows()
+		const mapHeight = Math.min(mapRows.length, height)
+		const mapWidth = Math.min(mapRows[0]?.length ?? 0, width)
+
+		for (let y = 0; y < mapHeight; y++) {
+			for (let x = 0; x < mapWidth; x++) {
+				buffer[y]![x] = mapRows[y]![x]!
+			}
+		}
+
+		const playerMapX = Math.trunc(player.playerX)
+		const playerMapY = Math.trunc(player.playerY)
+
+		if (
+			playerMapX >= 0 &&
+			playerMapX < mapWidth &&
+			playerMapY >= 0 &&
+			playerMapY < mapHeight
+		) {
+			buffer[playerMapY]![playerMapX] =
+				MiniMap.getDirectionMarker(player.playerA)
+		}
+
+		return buffer.map((row) => row.join("")).join("\n")
+
 	}
 
 	private castRay(
