@@ -3,8 +3,11 @@ import type { WebSocket } from "ws"
 import type { GameSession } from "./game-session.js"
 import { AsciiRenderer } from "./ascii-renderer.js"
 import { sharedMap } from "./mini-map.js"
+import { GameBot } from "./bot.js"
 
 const FRAME_INTERVAL_MS = 50
+const BOT_COUNT = 5
+const BOT_RESPAWN_DELAY_MS = 3000
 
 const MAX_SHOT_DISTANCE: Record<"pistol" | "shotgun", number> = {
 	pistol: 12,
@@ -26,8 +29,23 @@ export class GameLoop {
 	private readonly sessions = new Map<WebSocket, GameSession>();
 	private timer: ReturnType<typeof setInterval> | undefined
 
-	private readonly respawnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private readonly respawnTimers =
+		new Map<string, ReturnType<typeof setTimeout>>();
 	private readonly respawnDelayMs = 3000;
+
+	private readonly bots: GameBot[] = Array.from(
+		{ length: BOT_COUNT },
+		(_, index) => new GameBot(`bot-${index + 1}`, `Bot ${index + 1}`),
+	);
+
+	private readonly botRespawnTimers =
+		new Map<string, ReturnType<typeof setTimeout>>();
+
+	private get botsEnabled(): boolean {
+		return Array.from(this.sessions.values()).some(
+			(session) => session.botsEnabled,
+		)
+	}
 
 	getPlayers(exceptPlayerId?: string) {
 		return Array.from(this.sessions.values())
@@ -83,12 +101,18 @@ export class GameLoop {
 		const damage = SHOT_DAMAGE[weapon]
 		const angleTolerance = HIT_ANGLE[weapon]
 
-		const targets = Array.from(this.sessions.values())
+		const playerTargets = Array.from(this.sessions.values())
 			.map((targetSession) => targetSession.player)
 			.filter(
 				(target) =>
 					target.playerId !== shooter.playerId && target.health > 0,
 			)
+
+		const botTargets = this.botsEnabled
+			? this.bots.filter((bot) => bot.isAlive)
+			: []
+
+		const targets = [...playerTargets, ...botTargets]
 
 		for (const target of targets) {
 			const dx = target.playerX - shooter.playerX
@@ -98,11 +122,7 @@ export class GameLoop {
 			if (distance <= 0.2 || distance > maxDistance) continue
 
 			const targetAngle = Math.atan2(dy, dx)
-			const difference = this.normalizeAngle(
-				targetAngle - shooter.playerA,
-			)
-
-			// Игрок должен находиться достаточно близко к линии прицеливания.
+			const difference = this.normalizeAngle(targetAngle - shooter.playerA)
 			const targetRadiusAngle = Math.atan2(0.35, distance)
 
 			if (
@@ -112,7 +132,7 @@ export class GameLoop {
 				continue
 			}
 
-			// Проверяем, не закрывает ли цель стена.
+			// Стена не должна пропускать выстрел.
 			const wallDistance = this.castRay(
 				shooter.playerX,
 				shooter.playerY,
@@ -120,8 +140,6 @@ export class GameLoop {
 			)
 
 			if (wallDistance < distance - 0.25) continue
-
-			// На случай, если здоровье цели уже стало нулём.
 			if (target.health <= 0) continue
 
 			target.takeDamage(damage)
@@ -132,13 +150,20 @@ export class GameLoop {
 			)
 
 			if (target.health <= 0) {
-				const deadSession = Array.from(this.sessions.values()).find(
-					(current) => current.player.playerId === target.playerId,
-				)
+				if (target instanceof GameBot) {
+					this.scheduleBotRespawn(target)
+				} else {
+					const deadSession = Array.from(this.sessions.values()).find(
+						(current) => current.player.playerId === target.playerId,
+					)
 
-				if (deadSession) {
-					this.scheduleRespawn(deadSession)
+					if (deadSession) {
+						this.scheduleRespawn(deadSession)
+					}
 				}
+
+				// Один выстрел поражает только одну цель.
+				break
 			}
 		}
 	}
@@ -147,6 +172,7 @@ export class GameLoop {
 		if (this.timer) return
 
 		this.timer = setInterval(() => {
+			this.updateBots()
 			this.renderFrame()
 		}, FRAME_INTERVAL_MS)
 	}
@@ -156,18 +182,52 @@ export class GameLoop {
 
 		clearInterval(this.timer)
 		this.timer = undefined
+
+		for (const timer of this.botRespawnTimers.values()) {
+			clearTimeout(timer)
+		}
+		this.botRespawnTimers.clear()
+	}
+
+	private updateBots(): void {
+		if (!this.botsEnabled) return
+
+		const elapsedSeconds = FRAME_INTERVAL_MS / 1000
+
+		for (const bot of this.bots) {
+			if (bot.isAlive) {
+				bot.update(elapsedSeconds)
+			}
+		}
 	}
 
 	private renderFrame(): void {
+		const visibleBots = this.botsEnabled
+			? this.bots
+				.filter((bot) => bot.isAlive)
+				.map((bot) => ({
+					playerId: bot.playerId,
+					nickname: bot.nickname,
+					playerX: bot.playerX,
+					playerY: bot.playerY,
+					playerA: bot.playerA,
+				}))
+			: []
+
 		for (const [ws, session] of this.sessions) {
 			if (ws.readyState !== 1) continue
 
 			try {
+				const otherPlayers = [
+					...this.getPlayers(session.player.playerId),
+					...visibleBots,
+				]
+
 				const frame = this.renderer.render(
 					session.player,
 					sharedMap,
 					session.viewport,
-					this.getPlayers(session.player.playerId),
+					otherPlayers,
 					{
 						weapon: session.currentWeapon,
 						shooting: session.isShooting,
@@ -212,6 +272,50 @@ export class GameLoop {
 		return angle
 	}
 
+	private scheduleBotRespawn(bot: GameBot): void {
+		if (this.botRespawnTimers.has(bot.playerId)) return
+
+		console.log(`Bot died: ${bot.nickname}. Respawn scheduled.`)
+
+		const timer = setTimeout(() => {
+			this.botRespawnTimers.delete(bot.playerId)
+
+			const occupied = [
+				...Array.from(this.sessions.values())
+					.filter((session) => session.player.health > 0)
+					.map((session) => ({
+						x: session.player.playerX,
+						y: session.player.playerY,
+					})),
+				...this.bots
+					.filter((other) => other !== bot && other.isAlive)
+					.map((other) => ({
+						x: other.playerX,
+						y: other.playerY,
+					})),
+			]
+
+			const spawn = sharedMap.tryGetRandomSpawn(occupied)
+
+			if (!spawn) {
+				console.error(`No spawn available for ${bot.nickname}`)
+				return
+			}
+
+			bot.respawn()
+			bot.playerX = spawn.x
+			bot.playerY = spawn.y
+
+			console.log(
+				`Bot respawned: ${bot.nickname}, ` +
+				`x=${spawn.x.toFixed(1)}, y=${spawn.y.toFixed(1)}, ` +
+				`health=${bot.health}`,
+			)
+		}, BOT_RESPAWN_DELAY_MS)
+
+		this.botRespawnTimers.set(bot.playerId, timer)
+	}
+
 	private scheduleRespawn(session: GameSession): void {
 		const player = session.player
 
@@ -250,7 +354,8 @@ export class GameLoop {
 
 			console.log(
 				`Player respawned: ${player.nickname}, ` +
-				`x=${spawn.x.toFixed(1)}, y=${spawn.y.toFixed(1)}, health=${player.health}`,
+				`x=${spawn.x.toFixed(1)}, y=${spawn.y.toFixed(1)}, ` +
+				`health=${player.health}`,
 			)
 		}, this.respawnDelayMs)
 
