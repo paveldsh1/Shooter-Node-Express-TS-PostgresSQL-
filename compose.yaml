@@ -1,15 +1,11 @@
-
 services:
   postgres:
     image: postgres:17
-    container_name: player-state-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: player_state
       POSTGRES_USER: app
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_password}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -27,7 +23,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      JWT_SECRET: ${JWT_SECRET:?Add JWT_SECRET to your .env file}
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-before-deployment}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-5h}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: app

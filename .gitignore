@@ -128,3 +128,12 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Docker and generated files
+dist/
+node_modules/
