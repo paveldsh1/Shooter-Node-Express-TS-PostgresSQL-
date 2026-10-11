@@ -209,7 +209,7 @@ async function startApp(): Promise<void> {
 
   const PORT = Number(process.env.PORT ?? 3000)
 
-  server.listen(PORT, () => {
+  server.listen(PORT, "0.0.0.0", () => {
     gameLoop.start()
     console.log(`Server is running on http://localhost:${PORT}`)
   })

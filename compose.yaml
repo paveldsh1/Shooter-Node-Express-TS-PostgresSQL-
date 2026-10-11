@@ -1,15 +1,40 @@
+
 services:
   postgres:
     image: postgres:17
     container_name: player-state-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: player_state
       POSTGRES_USER: app
-      POSTGRES_PASSWORD: local_dev_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_password}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d player_state"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  game:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:?Add JWT_SECRET to your .env file}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: app
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_password}
+      DB_NAME: player_state
+    ports:
+      - "3000:3000"
 
 volumes:
   postgres_data:
