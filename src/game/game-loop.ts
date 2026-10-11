@@ -1,9 +1,11 @@
+
 import type { WebSocket } from "ws"
 import type { GameSession } from "./game-session.js"
 import { AsciiRenderer } from "./ascii-renderer.js"
 import { sharedMap } from "./mini-map.js"
 
 const FRAME_INTERVAL_MS = 50
+
 const MAX_SHOT_DISTANCE: Record<"pistol" | "shotgun", number> = {
 	pistol: 12,
 	shotgun: 7,
@@ -26,6 +28,7 @@ export class GameLoop {
 
 	getPlayers(exceptPlayerId?: string) {
 		return Array.from(this.sessions.values())
+			.filter((session) => session.player.health > 0)
 			.map((session) => ({
 				playerId: session.player.playerId,
 				nickname: session.player.nickname,
@@ -49,6 +52,10 @@ export class GameLoop {
 		if (!session.tryStartShot()) return
 
 		const shooter = session.player
+
+		// Мёртвый игрок не может стрелять.
+		if (shooter.health <= 0) return
+
 		const weapon = session.currentWeapon
 		const maxDistance = MAX_SHOT_DISTANCE[weapon]
 		const damage = SHOT_DAMAGE[weapon]
@@ -69,15 +76,21 @@ export class GameLoop {
 			if (distance <= 0.2 || distance > maxDistance) continue
 
 			const targetAngle = Math.atan2(dy, dx)
-			const difference = this.normalizeAngle(targetAngle - shooter.playerA)
+			const difference = this.normalizeAngle(
+				targetAngle - shooter.playerA,
+			)
 
 			// Игрок должен находиться достаточно близко к линии прицеливания.
 			const targetRadiusAngle = Math.atan2(0.35, distance)
-			if (Math.abs(difference) > angleTolerance + targetRadiusAngle) {
+
+			if (
+				Math.abs(difference) >
+				angleTolerance + targetRadiusAngle
+			) {
 				continue
 			}
 
-			// Проверяем стену по направлению к цели.
+			// Проверяем, не закрывает ли цель стена.
 			const wallDistance = this.castRay(
 				shooter.playerX,
 				shooter.playerY,
@@ -86,14 +99,22 @@ export class GameLoop {
 
 			if (wallDistance < distance - 0.25) continue
 
+			// На случай, если здоровье цели уже стало нулём.
+			if (target.health <= 0) continue
+
 			target.takeDamage(damage)
 
 			console.log(
 				`Hit: ${shooter.nickname} -> ${target.nickname}, ` +
 				`weapon=${weapon}, damage=${damage}, health=${target.health}`,
 			)
-		}
 
+			if (target.health <= 0) {
+				console.log(
+					`Player died: ${target.nickname} (${target.playerId})`,
+				)
+			}
+		}
 	}
 
 	start(): void {
@@ -102,7 +123,6 @@ export class GameLoop {
 		this.timer = setInterval(() => {
 			this.renderFrame()
 		}, FRAME_INTERVAL_MS)
-
 	}
 
 	stop(): void {
@@ -110,7 +130,6 @@ export class GameLoop {
 
 		clearInterval(this.timer)
 		this.timer = undefined
-
 	}
 
 	private renderFrame(): void {
@@ -123,6 +142,12 @@ export class GameLoop {
 					sharedMap,
 					session.viewport,
 					this.getPlayers(session.player.playerId),
+					{
+						weapon: session.currentWeapon,
+						shooting: session.isShooting,
+						miniMapVisible: session.miniMapVisible,
+						helpVisible: session.helpVisible,
+					},
 				)
 
 				ws.send(frame, { binary: true })
@@ -130,13 +155,13 @@ export class GameLoop {
 				console.error("Failed to render game frame:", error)
 			}
 		}
-
 	}
 
 	private castRay(x: number, y: number, angle: number): number {
 		const step = 0.05
 		const dx = Math.cos(angle) * step
 		const dy = Math.sin(angle) * step
+
 		let rayX = x
 		let rayY = y
 		let distance = 0
@@ -152,12 +177,12 @@ export class GameLoop {
 		}
 
 		return 24
-
 	}
 
 	private normalizeAngle(angle: number): number {
 		while (angle > Math.PI) angle -= Math.PI * 2
 		while (angle < -Math.PI) angle += Math.PI * 2
+
 		return angle
 	}
 }

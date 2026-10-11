@@ -18,6 +18,10 @@ export class GamePlayer {
 	public playerA = 4.71;
 	public health = 100;
 
+	public get isAlive(): boolean {
+		return this.health > 0
+	}
+
 	constructor(
 		public readonly playerId: string,
 		public readonly nickname: string,
@@ -40,12 +44,11 @@ export class GamePlayer {
 	}
 
 	takeDamage(amount: number): void {
-		if (!Number.isFinite(amount) || amount <= 0 || this.health <= 0) {
+		if (!this.isAlive) {
 			return
 		}
 
-		this.health = Math.max(0, this.health - Math.floor(amount))
-
+		this.health = Math.max(0, this.health - amount)
 	}
 
 	respawn(x: number, y: number, angle: number): void {

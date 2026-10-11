@@ -14,6 +14,8 @@ export type GameAction =
 	| { type: "shoot" }
 	| { type: "select-weapon"; weapon: WeaponType }
 	| { type: "toggle-bots" }
+	| { type: "toggle-help" }
+	| { type: "toggle-minimap" }
 
 const WEAPON_COOLDOWN_MS: Record<WeaponType, number> = {
 	pistol: 350,
@@ -33,7 +35,20 @@ export class GameSession {
 
 	private lastShotAt = 0;
 
+	public helpVisible = true;
+	public miniMapVisible = true;
+
+	private shootingUntil = 0;
+
 	constructor(public readonly player: GamePlayer) { }
+
+	get isShooting(): boolean {
+		return Date.now() < this.shootingUntil
+	}
+
+	startShootingAnimation(): void {
+		this.shootingUntil = Date.now() + 180
+	}
 
 	tryStartShot(): boolean {
 		if (this.player.health <= 0) {
@@ -61,6 +76,13 @@ export class GameSession {
 		}
 
 		switch (command) {
+			case "Enter":
+				this.helpVisible = !this.helpVisible
+				return { type: "toggle-help" }
+
+			case "KeyM":
+				this.miniMapVisible = !this.miniMapVisible
+				return { type: "toggle-minimap" }
 			case "KeyW":
 				this.player.moveForward(elapsedSeconds, this.map)
 				return { type: "none" }
