@@ -11,6 +11,13 @@ export class AsciiRenderer {
 		player: GamePlayer,
 		map: MiniMap,
 		viewport: Viewport,
+		otherPlayers: Array<{
+			playerId: string
+			nickname: string
+			playerX: number
+			playerY: number
+			playerA: number
+		}> = [],
 	): string {
 		const width = Math.max(20, Math.min(viewport.columns, 240))
 		const height = Math.max(10, Math.min(viewport.rows, 100))
@@ -23,6 +30,7 @@ export class AsciiRenderer {
 				),
 		)
 
+		// Рендеринг 3D-вида.
 		for (let column = 0; column < width; column++) {
 			const cameraX = (2 * column) / width - 1
 			const rayAngle =
@@ -46,11 +54,7 @@ export class AsciiRenderer {
 				Math.floor((height - wallHeight) / 2),
 			)
 
-			const wallEnd = Math.min(
-				height,
-				wallStart + wallHeight,
-			)
-
+			const wallEnd = Math.min(height, wallStart + wallHeight)
 			const wallChar = this.getWallChar(distance)
 
 			for (let y = wallStart; y < wallEnd; y++) {
@@ -58,7 +62,7 @@ export class AsciiRenderer {
 			}
 		}
 
-
+		// Мини-карта в левом верхнем углу.
 		const mapRows = map.getRows()
 		const mapHeight = Math.min(mapRows.length, height)
 		const mapWidth = Math.min(mapRows[0]?.length ?? 0, width)
@@ -69,6 +73,22 @@ export class AsciiRenderer {
 			}
 		}
 
+		// Другие игроки.
+		for (const other of otherPlayers) {
+			const x = Math.trunc(other.playerX)
+			const y = Math.trunc(other.playerY)
+
+			if (
+				x >= 0 &&
+				x < mapWidth &&
+				y >= 0 &&
+				y < mapHeight
+			) {
+				buffer[y]![x] = "P"
+			}
+		}
+
+		// Текущий игрок рисуется последним, чтобы его маркер был виден.
 		const playerMapX = Math.trunc(player.playerX)
 		const playerMapY = Math.trunc(player.playerY)
 
@@ -83,7 +103,6 @@ export class AsciiRenderer {
 		}
 
 		return buffer.map((row) => row.join("")).join("\n")
-
 	}
 
 	private castRay(
@@ -110,7 +129,7 @@ export class AsciiRenderer {
 			}
 		}
 
-		// Коррекция fish-eye: расстояние проецируется на направление взгляда.
+		// Коррекция искажения перспективы.
 		return Math.max(
 			0.1,
 			distance * Math.cos(angle),

@@ -9,6 +9,19 @@ const FRAME_INTERVAL_MS = 50
 export class GameLoop {
 	private readonly renderer = new AsciiRenderer();
 	private readonly sessions = new Map<WebSocket, GameSession>();
+
+	getPlayers(exceptPlayerId?: string) {
+		return Array.from(this.sessions.values())
+			.map((session) => ({
+				playerId: session.player.playerId,
+				nickname: session.player.nickname,
+				playerX: session.player.playerX,
+				playerY: session.player.playerY,
+				playerA: session.player.playerA,
+			}))
+			.filter((player) => player.playerId !== exceptPlayerId)
+	}
+
 	private timer: ReturnType<typeof setInterval> | undefined
 
 	addPlayer(ws: WebSocket, session: GameSession): void {
@@ -43,6 +56,7 @@ export class GameLoop {
 					session.player,
 					sharedMap,
 					session.viewport,
+					this.getPlayers(session.player.playerId)
 				)
 
 				ws.send(frame, { binary: true })
