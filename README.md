@@ -6,6 +6,9 @@ This project is a Node.js/TypeScript port of the original [Shooter C# project](h
 
 **Repository:** [Shooter-Node-Express-TS-PostgresSQL-](https://github.com/paveldsh1/Shooter-Node-Express-TS-PostgresSQL-)
 
+### Demo
+![Gameplay demo](docs/demo.gif)
+
 ## Features
 
 - **WebSocket multiplayer** — multiple players share the same game world.
@@ -443,6 +446,9 @@ This repository ports the core ASCII FPS gameplay to Node.js and TypeScript, usi
 Сервер построен на Express и WebSocket. PostgreSQL используется для хранения аккаунтов и игрового состояния, JWT — для аутентификации.
 
 Игроки перемещаются по общей случайно генерируемой карте, выбирают оружие, стреляют друг в друга и сражаются с ботами. Игровой мир отображается в виде ASCII-графики.
+
+### Демонстрация
+![Демо игры](docs/demo.gif)
 
 ## Возможности
 
