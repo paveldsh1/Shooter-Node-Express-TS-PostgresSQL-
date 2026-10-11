@@ -26,6 +26,9 @@ export class GameLoop {
 	private readonly sessions = new Map<WebSocket, GameSession>();
 	private timer: ReturnType<typeof setInterval> | undefined
 
+	private readonly respawnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private readonly respawnDelayMs = 3000;
+
 	getPlayers(exceptPlayerId?: string) {
 		return Array.from(this.sessions.values())
 			.filter((session) => session.player.health > 0)
@@ -44,6 +47,25 @@ export class GameLoop {
 	}
 
 	removePlayer(ws: WebSocket): void {
+		const session = this.sessions.get(ws)
+
+		if (session) {
+			const playerId = session.player.playerId
+			const anotherConnectionExists = Array.from(this.sessions.entries()).some(
+				([otherWs, otherSession]) =>
+					otherWs !== ws && otherSession.player.playerId === playerId,
+			)
+
+			if (!anotherConnectionExists) {
+				const timer = this.respawnTimers.get(playerId)
+
+				if (timer) {
+					clearTimeout(timer)
+					this.respawnTimers.delete(playerId)
+				}
+			}
+		}
+
 		this.sessions.delete(ws)
 	}
 
@@ -110,9 +132,13 @@ export class GameLoop {
 			)
 
 			if (target.health <= 0) {
-				console.log(
-					`Player died: ${target.nickname} (${target.playerId})`,
+				const deadSession = Array.from(this.sessions.values()).find(
+					(current) => current.player.playerId === target.playerId,
 				)
+
+				if (deadSession) {
+					this.scheduleRespawn(deadSession)
+				}
 			}
 		}
 	}
@@ -184,5 +210,50 @@ export class GameLoop {
 		while (angle < -Math.PI) angle += Math.PI * 2
 
 		return angle
+	}
+
+	private scheduleRespawn(session: GameSession): void {
+		const player = session.player
+
+		if (player.health > 0) return
+		if (this.respawnTimers.has(player.playerId)) return
+
+		console.log(`Respawn scheduled: ${player.nickname}`)
+
+		const timer = setTimeout(() => {
+			this.respawnTimers.delete(player.playerId)
+
+			// Игрок мог отключиться за время ожидания.
+			const stillConnected = Array.from(this.sessions.values()).some(
+				(current) => current.player.playerId === player.playerId,
+			)
+
+			if (!stillConnected) return
+
+			const occupied = Array.from(this.sessions.values())
+				.filter((current) => current.player.playerId !== player.playerId)
+				.filter((current) => current.player.health > 0)
+				.map((current) => ({
+					x: current.player.playerX,
+					y: current.player.playerY,
+				}))
+
+			const spawn = sharedMap.tryGetRandomSpawn(occupied)
+
+			if (!spawn) {
+				console.error(`No spawn available for ${player.nickname}`)
+				return
+			}
+
+			const angle = Math.random() * Math.PI * 2
+			player.respawn(spawn.x, spawn.y, angle)
+
+			console.log(
+				`Player respawned: ${player.nickname}, ` +
+				`x=${spawn.x.toFixed(1)}, y=${spawn.y.toFixed(1)}, health=${player.health}`,
+			)
+		}, this.respawnDelayMs)
+
+		this.respawnTimers.set(player.playerId, timer)
 	}
 }

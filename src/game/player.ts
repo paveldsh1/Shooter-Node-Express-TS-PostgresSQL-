@@ -17,9 +17,14 @@ export class GamePlayer {
 	public playerY = 3.5;
 	public playerA = 4.71;
 	public health = 100;
+	private invulnerableUntil = 0;
 
 	public get isAlive(): boolean {
 		return this.health > 0
+	}
+
+	public get isInvulnerable(): boolean {
+		return Date.now() < this.invulnerableUntil
 	}
 
 	constructor(
@@ -44,7 +49,11 @@ export class GamePlayer {
 	}
 
 	takeDamage(amount: number): void {
-		if (!this.isAlive) {
+		if (!this.isAlive || this.isInvulnerable) {
+			return
+		}
+
+		if (!Number.isFinite(amount) || amount <= 0) {
 			return
 		}
 
@@ -54,6 +63,7 @@ export class GamePlayer {
 	respawn(x: number, y: number, angle: number): void {
 		this.setState(x, y, angle)
 		this.health = 100
+		this.invulnerableUntil = Date.now() + 2000
 	}
 
 	setState(x: number, y: number, angle: number): void {
