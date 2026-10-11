@@ -1,4 +1,3 @@
-
 export interface WalkableMap {
 	isWalkable(x: number, y: number): boolean
 }
@@ -17,6 +16,7 @@ export class GamePlayer {
 	public playerX = 3.5;
 	public playerY = 3.5;
 	public playerA = 4.71;
+	public health = 100;
 
 	constructor(
 		public readonly playerId: string,
@@ -39,6 +39,20 @@ export class GamePlayer {
 		this.rotate(1, elapsedSeconds)
 	}
 
+	takeDamage(amount: number): void {
+		if (!Number.isFinite(amount) || amount <= 0 || this.health <= 0) {
+			return
+		}
+
+		this.health = Math.max(0, this.health - Math.floor(amount))
+
+	}
+
+	respawn(x: number, y: number, angle: number): void {
+		this.setState(x, y, angle)
+		this.health = 100
+	}
+
 	setState(x: number, y: number, angle: number): void {
 		if (![x, y, angle].every(Number.isFinite)) {
 			throw new Error("Player position must contain finite numbers")
@@ -47,6 +61,7 @@ export class GamePlayer {
 		this.playerX = x
 		this.playerY = y
 		this.playerA = this.normalizeAngle(angle)
+
 	}
 
 	getState(): PlayerPosition {
@@ -63,10 +78,8 @@ export class GamePlayer {
 		direction: 1 | -1,
 	): void {
 		const step = PLAYER_SPEED * elapsedSeconds * direction
-
 		const nextX = this.playerX + Math.cos(this.playerA) * step
 		const nextY = this.playerY + Math.sin(this.playerA) * step
-
 
 		if (map.isWalkable(nextX, this.playerY)) {
 			this.playerX = nextX
@@ -80,7 +93,8 @@ export class GamePlayer {
 
 	private rotate(direction: 1 | -1, elapsedSeconds: number): void {
 		this.playerA = this.normalizeAngle(
-			this.playerA + direction * PLAYER_SPEED * ROTATION_SPEED * elapsedSeconds,
+			this.playerA +
+			direction * PLAYER_SPEED * ROTATION_SPEED * elapsedSeconds,
 		)
 	}
 

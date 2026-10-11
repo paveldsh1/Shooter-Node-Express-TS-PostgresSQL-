@@ -162,6 +162,8 @@ wss.on("connection", (ws) => {
           `Game action from ${player.nickname}:`,
           action,
         )
+
+        gameLoop.handleAction(session, action)
       }
     } catch (error) {
       console.error(
