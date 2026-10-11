@@ -37,6 +37,7 @@ export class GameSession {
 
 	public helpVisible = true;
 	public miniMapVisible = true;
+	public botsEnabled = false;
 
 	private shootingUntil = 0;
 
@@ -111,6 +112,7 @@ export class GameSession {
 				return { type: "select-weapon", weapon: "shotgun" }
 
 			case "Digit9":
+				this.botsEnabled = !this.botsEnabled
 				return { type: "toggle-bots" }
 
 			default:
